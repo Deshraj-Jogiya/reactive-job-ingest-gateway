@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run the real test suite (WebFlux + R2DBC integration tests)
+        run: mvn -B test
+      - name: Package the application
+        run: mvn -B package -DskipTests
+      - name: Boot the real app and hit its live endpoints
+        run: |
+          java -jar target/*.jar &
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8080/api/postings && break
+            sleep 1
+          done
+          curl --fail -X POST http://localhost:8080/api/postings \
+            -H "Content-Type: application/json" \
+            -d '{"companyName":"CI Smoke Test Co","jobTitle":"Verification Engineer","source":"ci"}'
+          curl --fail http://localhost:8080/api/postings | grep "CI Smoke Test Co"

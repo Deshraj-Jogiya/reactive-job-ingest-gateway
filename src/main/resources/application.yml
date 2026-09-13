@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: reactive-job-ingest-gateway
+  r2dbc:
+    url: r2dbc:h2:mem:///jobingest;DB_CLOSE_DELAY=-1
+  sql:
+    init:
+      mode: always
+
+server:
+  port: 8080
