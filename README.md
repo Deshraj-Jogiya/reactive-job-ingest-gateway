@@ -23,6 +23,25 @@ subscriber.
 - `GET /api/postings` -- the persisted postings, most recent first.
 - `GET /api/postings/stream` -- a `text/event-stream` connection that replays the last 20
   postings, then stays open and pushes new ones as they're ingested.
+- `GET /` -- a real, minimal live dashboard (`src/main/resources/static/index.html`, plain
+  `EventSource` against `/api/postings/stream`, no build step) so there's an actual way to
+  watch the feed besides `curl -N`.
+
+## Backpressure handling
+
+A slow SSE subscriber (a slow network, a client that isn't reading fast enough) is a normal
+case for a public ingest gateway, not an edge case -- without a bound, that subscriber's
+backlog of not-yet-sent postings would grow without limit. `JobPostingService.stream()` wraps
+the live feed in `onBackpressureBuffer(50, onOverflow, BufferOverflowStrategy.DROP_OLDEST)`:
+once a subscriber falls more than 50 postings behind, the oldest ones in its backlog are
+dropped (and logged) to make room for newer ones, rather than the stream growing memory
+unboundedly or failing outright with an overflow error. Also fixed while adding this: the
+live feed's `tryEmitNext` result was previously never checked, so a failed publish (the
+posting itself is still safely persisted either way) would have vanished with no trace --
+now logged as a warning. `JobPostingServiceBackpressureTest` exercises the real operator
+chain directly (no Spring context needed): one test confirms a keeping-up subscriber sees
+every posting unchanged, the other confirms a subscriber that hasn't requested anything yet
+gets the newest N postings with the rest dropped, rather than an overflow error.
 
 ## Running it
 
