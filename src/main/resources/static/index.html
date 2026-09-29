@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Job Ingest Live Feed</title>
+  <style>
+    body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 2rem; color: #1a1a1a; background: #fafafa; }
+    h1 { margin-bottom: 0.25rem; }
+    .status { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .status.connected { color: #1a7a3a; }
+    .status.disconnected { color: #b3261e; }
+    ul { list-style: none; margin: 0; padding: 0; max-width: 640px; }
+    li { background: #fff; border: 1px solid #e2e2e2; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.6rem; }
+    li .company { font-weight: 700; }
+    li .title { color: #333; }
+    li .meta { color: #888; font-size: 0.8rem; margin-top: 0.25rem; }
+    .empty { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>Job Ingest -- Live Feed</h1>
+  <p class="status" id="status">Connecting...</p>
+  <ul id="feed"></ul>
+  <p class="empty" id="empty">Waiting for postings...</p>
+
+  <script>
+    // A real, minimal consumer of this gateway's own SSE stream -- no
+    // build step, no framework, just EventSource, so there's a working
+    // way to actually watch the live feed besides curl -N.
+    const feedEl = document.getElementById("feed");
+    const statusEl = document.getElementById("status");
+    const emptyEl = document.getElementById("empty");
+
+    const source = new EventSource("/api/postings/stream");
+
+    source.onopen = () => {
+      statusEl.textContent = "Connected -- live";
+      statusEl.className = "status connected";
+    };
+
+    source.onerror = () => {
+      statusEl.textContent = "Disconnected -- retrying...";
+      statusEl.className = "status disconnected";
+    };
+
+    source.onmessage = (event) => {
+      const posting = JSON.parse(event.data);
+      emptyEl.style.display = "none";
+
+      const item = document.createElement("li");
+      const receivedAt = posting.receivedAt ? new Date(posting.receivedAt).toLocaleTimeString() : "";
+      item.innerHTML =
+        '<div class="company"></div>' +
+        '<div class="title"></div>' +
+        '<div class="meta"></div>';
+      item.querySelector(".company").textContent = posting.companyName;
+      item.querySelector(".title").textContent = posting.jobTitle;
+      item.querySelector(".meta").textContent = `${posting.source} -- ${receivedAt}`;
+
+      feedEl.prepend(item);
+    };
+  </script>
+</body>
+</html>

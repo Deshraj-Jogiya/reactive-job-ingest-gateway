@@ -31,3 +31,4 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"companyName":"CI Smoke Test Co","jobTitle":"Verification Engineer","source":"ci"}'
           curl --fail http://localhost:8080/api/postings | grep "CI Smoke Test Co"
+          curl --fail http://localhost:8080/ | grep "Job Ingest"
