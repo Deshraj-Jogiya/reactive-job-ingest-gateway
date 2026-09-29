@@ -3,6 +3,7 @@ package com.deshrajjogiya.jobingest.service;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
+import reactor.test.publisher.TestPublisher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,26 +34,27 @@ class JobPostingServiceBackpressureTest {
 
     @Test
     void dropsTheOldestBacklogInsteadOfErroringWhenASubscriberFallsBehind() {
-        // Flux.create's onNext calls run eagerly as the source is
-        // subscribed to, regardless of downstream demand -- the standard
-        // way to simulate a fast producer against a subscriber that
-        // hasn't requested anything yet, which is exactly the scenario
-        // onBackpressureBuffer(capacity, onOverflow, DROP_OLDEST) exists
-        // for.
+        // Real bug found via this repo's own CI on the first attempt at
+        // this test: Flux.create's default FluxSink buffers internally
+        // and only actually delivers according to real downstream
+        // demand, so it never forced an overflow at all -- every value
+        // arrived in order, nothing was ever dropped. TestPublisher's
+        // REQUEST_OVERFLOW violation is the real, documented Reactor
+        // testing tool for this exact case: it deliberately emits more
+        // items than have been requested, the same way Sinks.tryEmitNext
+        // (what production code actually uses) pushes regardless of
+        // subscriber demand.
         List<Integer> dropped = new ArrayList<>();
-        Flux<Integer> fastProducer = Flux.create(sink -> {
-            for (int i = 1; i <= 10; i++) {
-                sink.next(i);
-            }
-            sink.complete();
-        });
+        TestPublisher<Integer> source = TestPublisher.createNoncompliant(TestPublisher.Violation.REQUEST_OVERFLOW);
 
-        Flux<Integer> buffered = JobPostingService.applyBackpressureBuffer(fastProducer, 3, dropped::add);
+        Flux<Integer> buffered = JobPostingService.applyBackpressureBuffer(source.flux(), 3, dropped::add);
 
         // Zero initial demand: everything the producer emits before the
         // first request lands in the bounded buffer, past which the
         // oldest values get dropped to make room for newer ones.
         StepVerifier.create(buffered, 0)
+                .then(() -> source.next(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+                .then(source::complete)
                 .thenRequest(3)
                 .expectNext(8, 9, 10)
                 .verifyComplete();
